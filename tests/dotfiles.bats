@@ -37,6 +37,16 @@ realpath_or_readlink() {
   [[ "$output" == *"doctor"* ]]
 }
 
+@test "repo is stow-only (no legacy top-level dotfiles tracked)" {
+  [ ! -e "${REPO}/.zshrc" ]
+  [ ! -e "${REPO}/.zsh_aliases" ]
+  [ ! -e "${REPO}/.gitconfig" ]
+  [ ! -e "${REPO}/bin/install.sh" ]
+  [ ! -e "${REPO}/.config/nvim/init.lua" ]
+  [ ! -e "${REPO}/.config/nvim/init.vim" ]
+  [ ! -e "${REPO}/.config/neofetch/config.conf" ]
+}
+
 @test "link creates expected symlinks" {
   run "${REPO}/bin/dotfiles" link
   [ "$status" -eq 0 ]
