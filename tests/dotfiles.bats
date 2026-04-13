@@ -7,12 +7,8 @@ setup() {
   HOME_DIR="${WORKDIR}/home"
   mkdir -p "${REPO}" "${HOME_DIR}"
 
-  cp -R "${REPO_SRC}/bin" "${REPO}/"
-  cp -R "${REPO_SRC}/git" "${REPO}/"
-  cp -R "${REPO_SRC}/nvim" "${REPO}/"
-  cp -R "${REPO_SRC}/zsh" "${REPO}/"
-  cp -R "${REPO_SRC}/neofetch" "${REPO}/"
-  cp -R "${REPO_SRC}/zed" "${REPO}/"
+  # Use only tracked files (avoids sockets/root-owned dirs from local machines).
+  git -C "${REPO_SRC}" archive --format=tar HEAD | tar -x -C "${REPO}"
 
   chmod +x "${REPO}/bin/dotfiles"
 
@@ -26,8 +22,10 @@ teardown() {
 realpath_or_readlink() {
   if command -v realpath >/dev/null 2>&1; then
     realpath "$1"
-  else
+  elif readlink -f / >/dev/null 2>&1; then
     readlink -f "$1"
+  else
+    python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1"
   fi
 }
 
@@ -46,13 +44,20 @@ realpath_or_readlink() {
   [ -L "${HOME}/.zshrc" ]
   [ -L "${HOME}/.zsh_aliases" ]
   [ -L "${HOME}/.gitconfig" ]
-  [ -L "${HOME}/.config/nvim/init.lua" ]
-  [ -L "${HOME}/.config/neofetch/config.conf" ]
-  [ -L "${HOME}/.config/zed/settings.json" ]
+  [ -d "${HOME}/.config" ]
+  [ -L "${HOME}/.config/nvim" ]
+  [ -L "${HOME}/.config/neofetch" ]
+  [ -L "${HOME}/.config/zed" ]
+
+  [ -f "${HOME}/.config/nvim/init.lua" ]
+  [ -f "${HOME}/.config/neofetch/config.conf" ]
+  [ -f "${HOME}/.config/zed/settings.json" ]
 
   [ "$(realpath_or_readlink "${HOME}/.zshrc")" = "$(realpath_or_readlink "${REPO}/zsh/.zshrc")" ]
   [ "$(realpath_or_readlink "${HOME}/.gitconfig")" = "$(realpath_or_readlink "${REPO}/git/.gitconfig")" ]
   [ "$(realpath_or_readlink "${HOME}/.config/nvim/init.lua")" = "$(realpath_or_readlink "${REPO}/nvim/.config/nvim/init.lua")" ]
+  [ "$(realpath_or_readlink "${HOME}/.config/neofetch/config.conf")" = "$(realpath_or_readlink "${REPO}/neofetch/.config/neofetch/config.conf")" ]
+  [ "$(realpath_or_readlink "${HOME}/.config/zed/settings.json")" = "$(realpath_or_readlink "${REPO}/zed/.config/zed/settings.json")" ]
 }
 
 @test "link --backup moves conflicting files aside" {
@@ -137,4 +142,3 @@ EOF
   [[ "$output" == *'cask "discord"'* ]]
   [[ "$output" == *'cask "zed"'* ]]
 }
-
