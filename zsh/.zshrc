@@ -111,3 +111,9 @@ source ~/.zsh_aliases
 #	then export PS1="\[$(tput bold)\]\[$(tput setaf 1)\][\[$(tput setaf 3)\]\u\[$(tput setaf 2)\]@\[$(tput setaf 4)\]\h \[$(tput setaf 5)\]\W\[$(tput setaf 1)\]]\[$(tput setaf 7)\]\\$ \[$(tput sgr0)\]"
 #	else export PS1="\[$(tput bold)\]\[$(tput setaf 1)\][\[$(tput setaf 3)\]ROOT\[$(tput setaf 2)\]@\[$(tput setaf 4)\]$(hostname | awk '{print toupper($0)}') \[$(tput setaf 5)\]\W\[$(tput setaf 1)\]]\[$(tput setaf 7)\]\\$ \[$(tput sgr0)\]"
 #fi
+# Homebrew curl is keg-only; add it when present (Apple Silicon vs Intel).
+if [[ -d /opt/homebrew/opt/curl/bin ]]; then
+  export PATH="/opt/homebrew/opt/curl/bin:$PATH"
+elif [[ -d /usr/local/opt/curl/bin ]]; then
+  export PATH="/usr/local/opt/curl/bin:$PATH"
+fi

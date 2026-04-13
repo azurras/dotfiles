@@ -1,0 +1,7 @@
+^\.DS_Store$
+^\.config/\.DS_Store$
+^\.config/zed($|/)
+^\.config/StardewValley($|/)
+^\.config/gtk-3\.0($|/)
+^\.config/htop($|/)
+^\.config/iterm2($|/)

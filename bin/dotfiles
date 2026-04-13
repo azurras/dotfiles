@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+OS="$(uname -s)"
+
+die() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+has() { command -v "$1" >/dev/null 2>&1; }
+
+now_stamp() { date +"%Y%m%d-%H%M%S"; }
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/dotfiles bootstrap            Install packages + link dotfiles (default)
+  bin/dotfiles link [--backup]      Symlink dotfiles into $HOME using stow
+  bin/dotfiles unlink               Remove symlinks created by stow
+  bin/dotfiles brew install         Install from Brewfile (macOS or Linuxbrew)
+  bin/dotfiles brew sync            Merge currently-installed brew items into Brewfile
+  bin/dotfiles apt install          Install base CLI deps on Debian/Ubuntu (best-effort)
+
+Notes:
+  - This repo is organized as GNU Stow "packages" (zsh/, git/, nvim/, neofetch/).
+  - If linking fails due to conflicts, re-run `bin/dotfiles link --backup` to move
+    existing dotfiles aside into ~/.dotfiles-backup/<timestamp>/...
+EOF
+}
+
+packages() {
+  local pkgs=(git nvim zsh neofetch)
+  local out=()
+  local p
+  for p in "${pkgs[@]}"; do
+    [[ -d "$ROOT/$p" ]] && out+=("$p")
+  done
+  printf "%s\n" "${out[@]}"
+}
+
+ensure_homebrew() {
+  if has brew; then
+    return 0
+  fi
+
+  if [[ "$OS" != "Darwin" ]]; then
+    die "Homebrew not found. On Linux, install Linuxbrew (or use: bin/dotfiles apt install)."
+  fi
+
+  echo "Homebrew not found."
+  read -rp "Install Homebrew now? (y/n): " ans
+  [[ "$ans" == "y" ]] || die "Homebrew required for brew-managed installs."
+
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+  # Ensure brew is on PATH for the current shell (Apple Silicon vs Intel).
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+
+  has brew || die "brew install succeeded but brew is still not on PATH"
+}
+
+brew_install() {
+  ensure_homebrew
+  brew bundle --file "$ROOT/Brewfile"
+}
+
+brew_sync() {
+  ensure_homebrew
+  local tmp_dump tmp_out
+  tmp_dump="$(mktemp)"
+  tmp_out="$(mktemp)"
+
+  # Keep this deterministic and avoid extra metadata lookups.
+  brew bundle dump --file "$tmp_dump" --force >/dev/null 2>&1 || true
+  [[ -s "$tmp_dump" ]] || die "brew bundle dump failed"
+
+  # Merge existing Brewfile + dump by (type,name), prefer the longer line (keeps options like restart_service).
+  # Output is stable-sorted by type section and then name.
+  awk '
+    function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+    function order_for(type) {
+      if (type == "tap") return 1
+      if (type == "brew") return 2
+      if (type == "cask") return 3
+      if (type == "mas") return 4
+      return 9
+    }
+
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    {
+      line = trim($0)
+      split(line, parts, /[[:space:]]+/)
+      type = parts[1]
+      if (type != "tap" && type != "brew" && type != "cask" && type != "mas") next
+
+      q = index(line, "\"")
+      if (q == 0) next
+      rest = substr(line, q + 1)
+      q2 = index(rest, "\"")
+      if (q2 == 0) next
+      name = substr(rest, 1, q2 - 1)
+
+      key = type "\t" name
+      if (!(key in best) || length(line) > length(best[key])) best[key] = line
+    }
+
+    END {
+      for (k in best) {
+        split(k, p, "\t")
+        t = p[1]; nm = p[2]
+        print order_for(t) "\t" t "\t" nm "\t" best[k]
+      }
+    }
+  ' "$ROOT/Brewfile" "$tmp_dump" \
+    | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k3,3 \
+    | awk -F "$(printf '\t')" '
+        BEGIN { last_ord = 0 }
+        {
+          ord = $1; line = $4
+          if (last_ord != 0 && ord != last_ord) print ""
+          print line
+          last_ord = ord
+        }
+      ' >"$tmp_out"
+
+  mv "$tmp_out" "$ROOT/Brewfile"
+  rm -f "$tmp_dump"
+  echo "Updated: $ROOT/Brewfile"
+}
+
+ensure_oh_my_zsh() {
+  if [[ -d "$HOME/.oh-my-zsh" ]]; then
+    return 0
+  fi
+  has git || die "git not found"
+  git clone https://github.com/ohmyzsh/ohmyzsh.git "$HOME/.oh-my-zsh"
+}
+
+backup_conflicts_for_package() {
+  local pkg="$1"
+  local backup_root="$2"
+  local src rel dst
+
+  while IFS= read -r -d '' src; do
+    rel="${src#"$ROOT/$pkg/"}"
+    dst="$HOME/$rel"
+
+    if [[ -e "$dst" || -L "$dst" ]]; then
+      # If it's already the correct symlink, keep it.
+      if [[ -L "$dst" ]]; then
+        if has realpath && [[ "$(realpath "$dst")" == "$(realpath "$src")" ]]; then
+          continue
+        fi
+      fi
+
+      mkdir -p "$backup_root/$(dirname "$rel")"
+      mv "$dst" "$backup_root/$rel"
+    fi
+  done < <(find "$ROOT/$pkg" \( -type f -o -type l \) -print0 2>/dev/null || true)
+}
+
+link() {
+  local do_backup=0
+  if [[ "${1:-}" == "--backup" ]]; then
+    do_backup=1
+    shift || true
+  fi
+
+  has stow || die "stow not found (install it first: brew bundle, or apt install stow)"
+
+  mapfile -t pkgs < <(packages)
+  [[ "${#pkgs[@]}" -gt 0 ]] || die "no stow packages found"
+
+  if [[ "$do_backup" -eq 1 ]]; then
+    local backup_root="$HOME/.dotfiles-backup/$(now_stamp)"
+    local p
+    for p in "${pkgs[@]}"; do
+      backup_conflicts_for_package "$p" "$backup_root"
+    done
+    echo "Backed up existing dotfiles to: $backup_root"
+  fi
+
+  (cd "$ROOT" && stow --target "$HOME" "${pkgs[@]}")
+}
+
+unlink() {
+  has stow || die "stow not found"
+  mapfile -t pkgs < <(packages)
+  [[ "${#pkgs[@]}" -gt 0 ]] || die "no stow packages found"
+  (cd "$ROOT" && stow --target "$HOME" -D "${pkgs[@]}")
+}
+
+apt_install() {
+  [[ "$OS" == "Linux" ]] || die "apt install is only for Linux"
+  if ! has apt-get; then
+    die "apt-get not found (this is for Debian/Ubuntu)"
+  fi
+
+  if ! has sudo; then
+    die "sudo not found (needed to install packages)"
+  fi
+
+  sudo apt-get update
+  sudo apt-get install -y \
+    curl \
+    git \
+    neovim \
+    ripgrep \
+    stow \
+    tmux \
+    tree \
+    zsh
+}
+
+bootstrap() {
+  case "$OS" in
+    Darwin)
+      brew_install
+      ensure_oh_my_zsh
+      link
+      ;;
+    Linux)
+      if has brew; then
+        brew_install
+      else
+        echo "brew not found; skipping Brewfile install. (Use: bin/dotfiles apt install)"
+      fi
+      ensure_oh_my_zsh || true
+      link
+      ;;
+    *)
+      die "unsupported OS: $OS"
+      ;;
+  esac
+}
+
+main() {
+  local cmd="${1:-bootstrap}"
+  shift || true
+
+  case "$cmd" in
+    bootstrap) bootstrap "$@" ;;
+    link) link "$@" ;;
+    unlink) unlink "$@" ;;
+    brew)
+      local sub="${1:-}"
+      shift || true
+      case "$sub" in
+        install) brew_install "$@" ;;
+        sync) brew_sync "$@" ;;
+        *) usage; exit 2 ;;
+      esac
+      ;;
+    apt)
+      local sub="${1:-}"
+      shift || true
+      case "$sub" in
+        install) apt_install "$@" ;;
+        *) usage; exit 2 ;;
+      esac
+      ;;
+    -h|--help|help) usage ;;
+    *) usage; exit 2 ;;
+  esac
+}
+
+main "$@"

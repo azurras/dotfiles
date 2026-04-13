@@ -1,1 +1,9 @@
 .DS_Store
+
+# Editor / app state that shouldn't live in dotfiles
+nvim/.config/zed/
+nvim/.config/StardewValley/
+nvim/.config/iterm2/sockets/
+
+# This directory sometimes ends up created with root ownership (and breaks tooling)
+nvim/.config/htop/
