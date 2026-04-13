@@ -1,4 +1,4 @@
-.PHONY: help bootstrap link link-backup unlink doctor brew-install brew-upgrade brew-sync brew-snapshot brew-prune brew-prune-zap test
+.PHONY: help bootstrap link link-backup unlink doctor brew-install brew-upgrade brew-sync brew-snapshot brew-prune brew-prune-zap lint test
 
 help:
 	@echo "Targets:"
@@ -13,6 +13,7 @@ help:
 	@echo "  make brew-snapshot    Write Brewfile.versions"
 	@echo "  make brew-prune       Remove brew items not in Brewfile (destructive)"
 	@echo "  make brew-prune-zap   Like brew-prune, but zap casks (more destructive)"
+	@echo "  make lint             Lint Brewfile (duplicates/conflicts)"
 	@echo "  make test             Run unit tests (bats)"
 
 bootstrap:
@@ -48,6 +49,8 @@ brew-prune:
 brew-prune-zap:
 	./bin/dotfiles brew prune --zap
 
+lint:
+	python3 scripts/brewfile_lint.py Brewfile
+
 test:
 	bats tests
-

@@ -39,6 +39,7 @@ If you prefer `make`:
 make bootstrap
 make link-backup
 make brew-sync
+make lint
 make test
 ```
 

@@ -21,6 +21,10 @@ jobs:
           bash -n install.sh
           bash -n bootstrap.command
 
+      - name: Brewfile lint
+        run: |
+          python3 scripts/brewfile_lint.py Brewfile
+
       - name: Shellcheck
         run: |
           shellcheck bin/dotfiles install.sh bootstrap.command
