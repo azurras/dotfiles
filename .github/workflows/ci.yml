@@ -13,7 +13,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y shellcheck stow
+          sudo apt-get install -y shellcheck stow bats
 
       - name: Bash parse check
         run: |
@@ -30,3 +30,6 @@ jobs:
           mkdir -p /tmp/dotfiles-stow-ci
           stow -n --target /tmp/dotfiles-stow-ci git nvim zsh neofetch zed
 
+      - name: Unit tests
+        run: |
+          bats tests

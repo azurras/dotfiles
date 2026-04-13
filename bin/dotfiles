@@ -170,7 +170,8 @@ brew_prune() {
 
 brew_snapshot() {
   ensure_homebrew
-  local out="$ROOT/Brewfile.versions"
+  local snapshot_file
+  snapshot_file="$ROOT/Brewfile.versions"
   {
     echo "# Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
     echo "#"
@@ -182,8 +183,8 @@ brew_snapshot() {
     echo ""
     echo "[cask]"
     brew list --cask --versions | LC_ALL=C sort
-  } >"$out"
-  echo "Wrote: $out"
+  } >"$snapshot_file"
+  echo "Wrote: $snapshot_file"
 }
 
 ensure_oh_my_zsh() {
@@ -234,7 +235,8 @@ link() {
   [[ "${#pkgs[@]}" -gt 0 ]] || die "no stow packages found"
 
   if [[ "$do_backup" -eq 1 ]]; then
-    local backup_root="$HOME/.dotfiles-backup/$(now_stamp)"
+    local backup_root
+    backup_root="$HOME/.dotfiles-backup/$(now_stamp)"
     local p
     for p in "${pkgs[@]}"; do
       backup_conflicts_for_package "$p" "$backup_root"
