@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck stow
+
+      - name: Bash parse check
+        run: |
+          bash -n bin/dotfiles
+          bash -n install.sh
+          bash -n bootstrap.command
+
+      - name: Shellcheck
+        run: |
+          shellcheck bin/dotfiles install.sh bootstrap.command
+
+      - name: Stow dry-run
+        run: |
+          mkdir -p /tmp/dotfiles-stow-ci
+          stow -n --target /tmp/dotfiles-stow-ci git nvim zsh neofetch zed
+

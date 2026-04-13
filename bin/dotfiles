@@ -20,19 +20,23 @@ Usage:
   bin/dotfiles bootstrap            Install packages + link dotfiles (default)
   bin/dotfiles link [--backup]      Symlink dotfiles into $HOME using stow
   bin/dotfiles unlink               Remove symlinks created by stow
-  bin/dotfiles brew install         Install from Brewfile (macOS or Linuxbrew)
+  bin/dotfiles brew install [--upgrade]
+                                   Install from Brewfile (macOS or Linuxbrew)
   bin/dotfiles brew sync            Merge currently-installed brew items into Brewfile
+  bin/dotfiles brew prune [--zap]   Uninstall brew items not present in Brewfile (destructive)
+  bin/dotfiles brew snapshot        Write Brewfile.versions with currently-installed versions
   bin/dotfiles apt install          Install base CLI deps on Debian/Ubuntu (best-effort)
+  bin/dotfiles doctor               Sanity-check install/linking (non-destructive)
 
 Notes:
-  - This repo is organized as GNU Stow "packages" (zsh/, git/, nvim/, neofetch/).
+  - This repo is organized as GNU Stow "packages" (zsh/, git/, nvim/, neofetch/, zed/).
   - If linking fails due to conflicts, re-run `bin/dotfiles link --backup` to move
     existing dotfiles aside into ~/.dotfiles-backup/<timestamp>/...
 EOF
 }
 
 packages() {
-  local pkgs=(git nvim zsh neofetch)
+  local pkgs=(git nvim zsh neofetch zed)
   local out=()
   local p
   for p in "${pkgs[@]}"; do
@@ -68,7 +72,18 @@ ensure_homebrew() {
 
 brew_install() {
   ensure_homebrew
-  brew bundle --file "$ROOT/Brewfile"
+  local do_upgrade=0
+  if [[ "${1:-}" == "--upgrade" ]]; then
+    do_upgrade=1
+    shift || true
+  fi
+
+  if [[ "$do_upgrade" -eq 1 ]]; then
+    brew bundle --file "$ROOT/Brewfile" --upgrade
+  else
+    # Default is intentionally conservative to keep "bootstrap" from upgrading a whole machine.
+    brew bundle --file "$ROOT/Brewfile" --no-upgrade
+  fi
 }
 
 brew_sync() {
@@ -78,7 +93,9 @@ brew_sync() {
   tmp_out="$(mktemp)"
 
   # Keep this deterministic and avoid extra metadata lookups.
-  brew bundle dump --file "$tmp_dump" --force >/dev/null 2>&1 || true
+  brew bundle dump --file "$tmp_dump" --force \
+    --no-vscode --no-go --no-cargo --no-uv --no-npm --no-krew --no-flatpak \
+    >/dev/null 2>&1 || true
   [[ -s "$tmp_dump" ]] || die "brew bundle dump failed"
 
   # Merge existing Brewfile + dump by (type,name), prefer the longer line (keeps options like restart_service).
@@ -136,6 +153,39 @@ brew_sync() {
   echo "Updated: $ROOT/Brewfile"
 }
 
+brew_prune() {
+  ensure_homebrew
+  local zap=0
+  if [[ "${1:-}" == "--zap" ]]; then
+    zap=1
+    shift || true
+  fi
+
+  if [[ "$zap" -eq 1 ]]; then
+    brew bundle cleanup --file "$ROOT/Brewfile" --force --zap
+  else
+    brew bundle cleanup --file "$ROOT/Brewfile" --force
+  fi
+}
+
+brew_snapshot() {
+  ensure_homebrew
+  local out="$ROOT/Brewfile.versions"
+  {
+    echo "# Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    echo "#"
+    echo "# This is an audit trail of what was installed on the machine that generated it."
+    echo "# Homebrew cannot always install exact historical versions later."
+    echo ""
+    echo "[formula]"
+    brew list --formula --versions | LC_ALL=C sort
+    echo ""
+    echo "[cask]"
+    brew list --cask --versions | LC_ALL=C sort
+  } >"$out"
+  echo "Wrote: $out"
+}
+
 ensure_oh_my_zsh() {
   if [[ -d "$HOME/.oh-my-zsh" ]]; then
     return 0
@@ -176,7 +226,11 @@ link() {
 
   has stow || die "stow not found (install it first: brew bundle, or apt install stow)"
 
-  mapfile -t pkgs < <(packages)
+  local pkgs=()
+  local p
+  while IFS= read -r p; do
+    [[ -n "$p" ]] && pkgs+=("$p")
+  done < <(packages)
   [[ "${#pkgs[@]}" -gt 0 ]] || die "no stow packages found"
 
   if [[ "$do_backup" -eq 1 ]]; then
@@ -193,7 +247,11 @@ link() {
 
 unlink() {
   has stow || die "stow not found"
-  mapfile -t pkgs < <(packages)
+  local pkgs=()
+  local p
+  while IFS= read -r p; do
+    [[ -n "$p" ]] && pkgs+=("$p")
+  done < <(packages)
   [[ "${#pkgs[@]}" -gt 0 ]] || die "no stow packages found"
   (cd "$ROOT" && stow --target "$HOME" -D "${pkgs[@]}")
 }
@@ -218,6 +276,45 @@ apt_install() {
     tmux \
     tree \
     zsh
+}
+
+doctor() {
+  echo "OS: $OS"
+  echo "Repo: $ROOT"
+
+  local pkgs=()
+  local p
+  while IFS= read -r p; do
+    [[ -n "$p" ]] && pkgs+=("$p")
+  done < <(packages)
+  if [[ "${#pkgs[@]}" -eq 0 ]]; then
+    echo "WARN: no stow packages found"
+  else
+    echo "Stow packages: ${pkgs[*]}"
+    if has stow; then
+      mkdir -p /tmp/dotfiles-stow-doctor
+      # Ensure stow can at least traverse these packages without errors.
+      (cd "$ROOT" && stow -n --target /tmp/dotfiles-stow-doctor "${pkgs[@]}" >/dev/null 2>&1) || \
+        echo "WARN: stow dry-run reported issues (try: bin/dotfiles link --backup)"
+    else
+      echo "WARN: stow not found"
+    fi
+  fi
+
+  if [[ "$OS" == "Darwin" ]]; then
+    if has brew; then
+      brew bundle check --file "$ROOT/Brewfile" --no-upgrade >/dev/null 2>&1 || \
+        echo "WARN: brew bundle check failed (run: bin/dotfiles brew install)"
+    else
+      echo "WARN: brew not found"
+    fi
+  fi
+
+  local ds
+  ds="$(find "$ROOT" -path "$ROOT/.git" -prune -o -name .DS_Store -print 2>/dev/null | head -n 1 || true)"
+  if [[ -n "$ds" ]]; then
+    echo "WARN: .DS_Store present in repo (consider deleting): $ds"
+  fi
 }
 
 bootstrap() {
@@ -256,6 +353,8 @@ main() {
       case "$sub" in
         install) brew_install "$@" ;;
         sync) brew_sync "$@" ;;
+        prune) brew_prune "$@" ;;
+        snapshot) brew_snapshot "$@" ;;
         *) usage; exit 2 ;;
       esac
       ;;
@@ -267,6 +366,7 @@ main() {
         *) usage; exit 2 ;;
       esac
       ;;
+    doctor) doctor "$@" ;;
     -h|--help|help) usage ;;
     *) usage; exit 2 ;;
   esac

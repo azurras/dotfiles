@@ -111,6 +111,14 @@ require("lazy").setup({
           { name = "path" },
         }),
       })
-  end,
-}
+    end,
+  },
 })
+
+-- Machine-local overrides (not committed). Example: ~/.config/nvim/lua/local.lua
+do
+  local local_lua = vim.fn.stdpath("config") .. "/lua/local.lua"
+  if vim.loop.fs_stat(local_lua) then
+    pcall(dofile, local_lua)
+  end
+end

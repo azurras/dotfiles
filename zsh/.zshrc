@@ -102,7 +102,17 @@ fi
 
 # Personal exports
 ## Aliases
-source ~/.zsh_aliases
+if [[ -f ~/.zsh_aliases ]]; then
+  source ~/.zsh_aliases
+fi
+if [[ -f ~/.zsh_aliases.local ]]; then
+  source ~/.zsh_aliases.local
+fi
+
+# Machine-specific overrides (not committed).
+if [[ -f ~/.zshrc.local ]]; then
+  source ~/.zshrc.local
+fi
 
 #HISTSIZE= HISTFILESIZE= # Infinite history.
 

@@ -15,14 +15,20 @@ Or (Finder): double-click `bootstrap.command`.
 
 That will:
 
-- Install everything in `Brewfile` (`brew bundle`)
+- Install everything in `Brewfile` (`brew bundle --no-upgrade` by default)
 - Ensure `oh-my-zsh` is installed in `~/.oh-my-zsh`
-- Link dotfiles into `$HOME` using `stow` (packages: `zsh/`, `git/`, `nvim/`)
+- Link dotfiles into `$HOME` using `stow` (packages: `zsh/`, `git/`, `nvim/`, `neofetch/`, `zed/`)
 
 If you already have dotfiles and want to move them aside automatically:
 
 ```bash
 ./bin/dotfiles link --backup
+```
+
+Run a non-destructive sanity check:
+
+```bash
+./bin/dotfiles doctor
 ```
 
 ## Debian/Ubuntu (Best Effort)
@@ -46,7 +52,25 @@ To merge what is currently installed via brew into `Brewfile` (without deleting 
 ./bin/dotfiles brew sync
 ```
 
+To record currently-installed versions (audit trail):
+
+```bash
+./bin/dotfiles brew snapshot
+```
+
+To uninstall anything not listed in the Brewfile (destructive):
+
+```bash
+./bin/dotfiles brew prune
+```
+
 ## Repo Layout
 
 - `Brewfile`: apps + CLI tools (source of truth for macOS installs)
-- `zsh/`, `git/`, `nvim/`: GNU Stow packages that mirror the target paths under `$HOME`
+- `zsh/`, `git/`, `nvim/`, `neofetch/`, `zed/`: GNU Stow packages that mirror the target paths under `$HOME`
+
+## Machine-Local Overrides (Not Committed)
+
+- `~/.zshrc.local`
+- `~/.zsh_aliases.local`
+- `~/.config/nvim/lua/local.lua`
