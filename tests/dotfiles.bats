@@ -91,9 +91,12 @@ realpath_or_readlink() {
 }
 
 @test "doctor runs non-destructively" {
+  before_count="$(find "${HOME}" -mindepth 1 -print | wc -l | tr -d ' ')"
   run "${REPO}/bin/dotfiles" doctor
   [ "$status" -eq 0 ]
   [[ "$output" == *"Stow packages:"* ]]
+  after_count="$(find "${HOME}" -mindepth 1 -print | wc -l | tr -d ' ')"
+  [ "$before_count" -eq "$after_count" ]
 }
 
 @test "brew sync merges brew bundle dump into Brewfile (stubbed brew)" {
@@ -141,4 +144,64 @@ EOF
   [[ "$output" == *'brew "ripgrep"'* ]]
   [[ "$output" == *'cask "discord"'* ]]
   [[ "$output" == *'cask "zed"'* ]]
+}
+
+@test "brew prune calls brew bundle cleanup (stubbed brew)" {
+  mkdir -p "${WORKDIR}/fakebin"
+  export PATH="${WORKDIR}/fakebin:${PATH}"
+  export BREW_STUB_LOG="${WORKDIR}/brew.log"
+
+  cat >"${WORKDIR}/fakebin/brew" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "$*" >> "${BREW_STUB_LOG:?missing BREW_STUB_LOG}"
+if [[ "${1:-}" == "bundle" && "${2:-}" == "cleanup" ]]; then
+  exit 0
+fi
+echo "unsupported brew invocation: $*" >&2
+exit 1
+EOF
+  chmod +x "${WORKDIR}/fakebin/brew"
+
+  cat >"${REPO}/Brewfile" <<'EOF'
+brew "git"
+EOF
+
+  run "${REPO}/bin/dotfiles" brew prune
+  [ "$status" -eq 0 ]
+
+  run cat "${BREW_STUB_LOG}"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"bundle cleanup"* ]]
+  [[ "$output" == *"--file"* ]]
+  [[ "$output" == *"--force"* ]]
+}
+
+@test "brew prune --zap includes --zap flag (stubbed brew)" {
+  mkdir -p "${WORKDIR}/fakebin"
+  export PATH="${WORKDIR}/fakebin:${PATH}"
+  export BREW_STUB_LOG="${WORKDIR}/brew.log"
+
+  cat >"${WORKDIR}/fakebin/brew" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "$*" >> "${BREW_STUB_LOG:?missing BREW_STUB_LOG}"
+if [[ "${1:-}" == "bundle" && "${2:-}" == "cleanup" ]]; then
+  exit 0
+fi
+echo "unsupported brew invocation: $*" >&2
+exit 1
+EOF
+  chmod +x "${WORKDIR}/fakebin/brew"
+
+  cat >"${REPO}/Brewfile" <<'EOF'
+brew "git"
+EOF
+
+  run "${REPO}/bin/dotfiles" brew prune --zap
+  [ "$status" -eq 0 ]
+
+  run cat "${BREW_STUB_LOG}"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--zap"* ]]
 }
