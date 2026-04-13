@@ -31,6 +31,17 @@ Run a non-destructive sanity check:
 ./bin/dotfiles doctor
 ```
 
+## Makefile Shortcuts
+
+If you prefer `make`:
+
+```bash
+make bootstrap
+make link-backup
+make brew-sync
+make test
+```
+
 ## Debian/Ubuntu (Best Effort)
 
 ```bash
